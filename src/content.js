@@ -691,7 +691,7 @@ function renderTooltipContent(date, gran) {
     lines.push(
       `<div class="dn-row dn-extra"><span class="dn-tz">${escapeHtml(
         shortTzLabel(tz)
-      )}</span> ${escapeHtml(formatInTz(date, tz, withTime))}</div>`
+      )}</span><span class="dn-val">${escapeHtml(formatInTz(date, tz, withTime))}</span></div>`
     );
   }
   return lines.join("");

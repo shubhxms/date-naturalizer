@@ -7,12 +7,26 @@ const DEFAULTS = {
 
 const $ = (id) => document.getElementById(id);
 const hostEl = $("host");
+const localEl = $("local");
 const siteToggle = $("site-toggle");
 const globalToggle = $("global-toggle");
 const relativesToggle = $("relatives-toggle");
 const chipsEl = $("chips");
 const tzInput = $("tz-input");
 const tzList = $("tz-list");
+const tzCountEl = $("tz-count");
+
+// Header readout: HH:MM · IANA zone in the user's locale.
+function renderLocal() {
+  const now = new Date();
+  const time = new Intl.DateTimeFormat([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(now);
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  localEl.textContent = zone ? `${time}  ·  ${zone}` : time;
+}
 
 let currentHost = "";
 let state = { ...DEFAULTS };
@@ -70,7 +84,9 @@ function render() {
   for (const tz of state.extraTimezones) {
     const chip = document.createElement("span");
     chip.className = "chip";
-    chip.textContent = tz;
+    const label = document.createElement("span");
+    label.className = "chip-label";
+    label.textContent = tz;
     const x = document.createElement("button");
     x.type = "button";
     x.textContent = "×";
@@ -78,9 +94,13 @@ function render() {
     x.addEventListener("click", () => {
       save({ extraTimezones: state.extraTimezones.filter((t) => t !== tz) });
     });
+    chip.appendChild(label);
     chip.appendChild(x);
     chipsEl.appendChild(chip);
   }
+  tzCountEl.textContent = state.extraTimezones.length
+    ? String(state.extraTimezones.length)
+    : "";
 }
 
 siteToggle.addEventListener("change", () => {
@@ -121,6 +141,7 @@ tzInput.addEventListener("keydown", (e) => {
 });
 
 (async () => {
+  renderLocal();
   currentHost = await getCurrentHost();
   await load();
   render();
