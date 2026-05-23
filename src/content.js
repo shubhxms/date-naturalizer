@@ -19,23 +19,37 @@ const BLOCK_TAGS = new Set([
 
 const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-// If the page title or first <h1> contains a year, use it as chrono's
-// reference so implied-year matches ("28 January" on a 2001 article)
-// resolve to that year instead of today.
-function inferPageYear() {
-  const candidates = [
+// Implied-year handling. chrono fills in the year of its reference Date
+// when the source has no explicit year. We override that per-match by
+// looking at the closest year in the surrounding DOM — block first, then
+// ancestors — falling back to a year in <title>/<h1>, then today.
+const YEAR_RE = /\b(1[89]\d{2}|20\d{2})\b/;
+
+const PAGE_YEAR_FALLBACK = (() => {
+  const sources = [
     document.title || "",
     document.querySelector("h1")?.textContent || "",
   ];
-  for (const s of candidates) {
-    const m = s.match(/\b(1[89]\d{2}|20\d{2})\b/);
+  for (const s of sources) {
+    const m = s.match(YEAR_RE);
     if (m) return parseInt(m[1], 10);
   }
   return null;
-}
-const pageYear = inferPageYear();
-function makeRefDate() {
-  return pageYear ? new Date(pageYear, 0, 15, 12, 0, 0) : new Date();
+})();
+
+function findContextYear(blockEl) {
+  let n = blockEl;
+  let depth = 0;
+  while (n && n.nodeType === 1 && depth < 6) {
+    const txt = n.textContent || "";
+    if (txt.length && txt.length < 5000) {
+      const m = txt.match(YEAR_RE);
+      if (m) return parseInt(m[1], 10);
+    }
+    n = n.parentElement;
+    depth++;
+  }
+  return PAGE_YEAR_FALLBACK;
 }
 
 // Timezone tokens that, if present in the matched text itself, mean
@@ -65,12 +79,22 @@ function findContextTz(blockEl) {
   return null;
 }
 
-function isoForResult(result, ctxTz) {
-  if (ctxTz === "UTC" && !TZ_TOKENS.test(result.text || "")) {
-    const s = result.start;
+function isoForResult(result, ctxTz, blockEl) {
+  const s = result.start;
+  let year = s.get("year");
+  let yearOverridden = false;
+  if (!s.isCertain("year")) {
+    const ny = findContextYear(blockEl);
+    if (ny != null && ny !== year) {
+      year = ny;
+      yearOverridden = true;
+    }
+  }
+  const useUtc = ctxTz === "UTC" && !TZ_TOKENS.test(result.text || "");
+  if (useUtc) {
     return new Date(
       Date.UTC(
-        s.get("year"),
+        year,
         (s.get("month") || 1) - 1,
         s.get("day") || 1,
         s.get("hour") || 0,
@@ -79,7 +103,13 @@ function isoForResult(result, ctxTz) {
       )
     ).toISOString();
   }
-  return result.start.date().toISOString();
+  const d = s.date();
+  if (yearOverridden) {
+    const d2 = new Date(d);
+    d2.setFullYear(year);
+    return d2.toISOString();
+  }
+  return d.toISOString();
 }
 
 let active = false;
@@ -205,7 +235,7 @@ function scanBlock(blockEl, nodes) {
 
   let results;
   try {
-    results = chrono.parse(combined, makeRefDate(), { forwardDate: false });
+    results = chrono.parse(combined, new Date(), { forwardDate: false });
   } catch {
     return;
   }
@@ -226,7 +256,7 @@ function scanBlock(blockEl, nodes) {
     const absS = r.index + ext.start;
     const absE = r.index + ext.end;
     if (absE <= absS) continue;
-    const iso = isoForResult(r, ctxTz);
+    const iso = isoForResult(r, ctxTz, blockEl);
     const gran = classifyGranularity(r, ext.text);
     for (const entry of map) {
       if (entry.end <= absS) continue;
