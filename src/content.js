@@ -590,7 +590,6 @@ function scanBlock(blockEl, nodes) {
     }
     const iso = isoForResult(r, ctxTz, blockEl, combined, nearAbsDate);
     const gran = classifyGranularity(r, ext.text);
-    const isRel = !MONTH_NAME.test(r.text) && !ISO_DATE.test(r.text);
     for (const entry of map) {
       if (entry.end <= absS) continue;
       if (entry.start >= absE) break;
@@ -602,7 +601,7 @@ function scanBlock(blockEl, nodes) {
         arr = [];
         ops.set(entry.node, arr);
       }
-      arr.push({ start: localS, end: localE, iso, gran, isRel });
+      arr.push({ start: localS, end: localE, iso, gran });
     }
   }
 
@@ -637,7 +636,6 @@ function wrapRangesInNode(textNode, ranges) {
     span.textContent = text.slice(r.start, r.end);
     span.dataset.iso = r.iso;
     span.dataset.gran = r.gran;
-    if (r.isRel) span.dataset.rel = "1";
     frag.appendChild(span);
     wrapped.add(span);
     cursor = r.end;
@@ -692,64 +690,54 @@ const MONTH_FMT = new Intl.DateTimeFormat(undefined, {
 function fmtPart(date, tz, opts) {
   return new Intl.DateTimeFormat(undefined, { ...opts, timeZone: tz }).format(date);
 }
-function dayKey(date, tz) {
-  // sortable YYYY-MM-DD in `tz`, used to detect day shifts vs local.
-  return new Intl.DateTimeFormat("en-CA", {
-    year: "numeric", month: "2-digit", day: "2-digit", timeZone: tz,
-  }).format(date);
-}
-function fmtFullLocal(date, withTime) {
-  // "Sat, May 23, 2026" or "Sat, May 23, 2026, 17:42"
+function fmtHeadline(date, withTime) {
+  // "Sat, May 23, 2026" or "Sat, May 23, 2026, 5:42 PM"
   const opts = { weekday: "short", year: "numeric", month: "short", day: "numeric" };
-  if (withTime) Object.assign(opts, { hour: "2-digit", minute: "2-digit", hour12: false });
+  if (withTime) Object.assign(opts, { hour: "numeric", minute: "2-digit" });
   return new Intl.DateTimeFormat(undefined, opts).format(date);
 }
+function fmtExtra(date, tz, withTime) {
+  // "Sat, 9:12 PM" or "Sat, May 23" — day-of-week is the unobtrusive
+  // cue for a day shift; otherwise we keep it tight.
+  const dow = fmtPart(date, tz, { weekday: "short" });
+  if (withTime) {
+    const t = fmtPart(date, tz, { hour: "numeric", minute: "2-digit" });
+    return `${dow}, ${t}`;
+  }
+  const md = fmtPart(date, tz, { month: "short", day: "numeric" });
+  return `${dow}, ${md}`;
+}
 
-function renderTooltipContent(date, gran, isRelSource) {
+function renderTooltipContent(date, gran) {
   const lines = [];
+  let primaryText, relText;
+
   if (gran === "month") {
-    lines.push(`<div class="dn-row dn-primary">${escapeHtml(MONTH_FMT.format(date))}</div>`);
-    lines.push(`<div class="dn-row dn-rel">${escapeHtml(relative(date, "month"))}</div>`);
-    return lines.join("");
+    primaryText = MONTH_FMT.format(date);
+    relText = relative(date, "month");
+  } else {
+    primaryText = fmtHeadline(date, gran === "time");
+    relText = relative(date, gran);
   }
-  const withTime = gran === "time";
-  const formatted = fmtFullLocal(date, withTime);
-  const rel = relative(date, gran);
 
-  // Headline = whichever flavor the source ISN'T.
-  const headline = isRelSource ? formatted : rel;
-  const byline = isRelSource ? rel : formatted;
+  lines.push(
+    `<div class="dn-headline">` +
+    `<span class="dn-date">${escapeHtml(primaryText)}</span>` +
+    `<span class="dn-rel">${escapeHtml(relText)}</span>` +
+    `</div>`
+  );
 
-  lines.push(`<div class="dn-row dn-primary">${escapeHtml(headline)}</div>`);
-  lines.push(`<div class="dn-row dn-rel">${escapeHtml(byline)}</div>`);
-
-  // Per-zone comparison: zone | day-of-week date | time. Day prefix
-  // gets an accent tint when the zone is on a different calendar day
-  // than the user's local — the one piece of "is this a different day
-  // for them?" signal that's worth ink.
-  if (settings.extraTimezones.length) {
-    const localDay = dayKey(date, userTz);
+  if (gran !== "month" && settings.extraTimezones.length) {
+    let extras = `<div class="dn-extras">`;
     for (const tz of settings.extraTimezones) {
-      const tzDay = dayKey(date, tz);
-      const shifted = tzDay !== localDay;
-      const dow = fmtPart(date, tz, { weekday: "short" });
-      const md = fmtPart(date, tz, { month: "short", day: "numeric" });
-      const tm = withTime
-        ? fmtPart(date, tz, { hour: "2-digit", minute: "2-digit", hour12: false })
-        : "";
-      const dowClass = shifted ? "dn-day dn-shifted" : "dn-day";
-      lines.push(
-        `<div class="dn-row dn-extra">` +
+      extras +=
         `<span class="dn-tz">${escapeHtml(shortTzLabel(tz))}</span>` +
-        `<span class="dn-when">` +
-        `<span class="${dowClass}">${escapeHtml(dow)}</span> ` +
-        `<span class="dn-md">${escapeHtml(md)}</span>` +
-        (tm ? `<span class="dn-time">${escapeHtml(tm)}</span>` : "") +
-        `</span>` +
-        `</div>`
-      );
+        `<span class="dn-val">${escapeHtml(fmtExtra(date, tz, gran === "time"))}</span>`;
     }
+    extras += `</div>`;
+    lines.push(extras);
   }
+
   return lines.join("");
 }
 
@@ -783,11 +771,7 @@ function showTooltip(target) {
   const date = new Date(iso);
   if (isNaN(date.getTime())) return;
   ensureTooltip();
-  tooltipEl.innerHTML = renderTooltipContent(
-    date,
-    target.dataset.gran || "day",
-    target.dataset.rel === "1"
-  );
+  tooltipEl.innerHTML = renderTooltipContent(date, target.dataset.gran || "day");
   positionTooltip(target);
 }
 
