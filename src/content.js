@@ -590,6 +590,7 @@ function scanBlock(blockEl, nodes) {
     }
     const iso = isoForResult(r, ctxTz, blockEl, combined, nearAbsDate);
     const gran = classifyGranularity(r, ext.text);
+    const isRel = !MONTH_NAME.test(r.text) && !ISO_DATE.test(r.text);
     for (const entry of map) {
       if (entry.end <= absS) continue;
       if (entry.start >= absE) break;
@@ -601,7 +602,7 @@ function scanBlock(blockEl, nodes) {
         arr = [];
         ops.set(entry.node, arr);
       }
-      arr.push({ start: localS, end: localE, iso, gran });
+      arr.push({ start: localS, end: localE, iso, gran, isRel });
     }
   }
 
@@ -636,6 +637,7 @@ function wrapRangesInNode(textNode, ranges) {
     span.textContent = text.slice(r.start, r.end);
     span.dataset.iso = r.iso;
     span.dataset.gran = r.gran;
+    if (r.isRel) span.dataset.rel = "1";
     frag.appendChild(span);
     wrapped.add(span);
     cursor = r.end;
@@ -712,7 +714,7 @@ function capFirst(s) {
   return s ? s[0].toUpperCase() + s.slice(1) : s;
 }
 
-function renderTooltipContent(date, gran) {
+function renderTooltipContent(date, gran, isRelSource) {
   const lines = [];
   let dateText, relText;
 
@@ -724,11 +726,13 @@ function renderTooltipContent(date, gran) {
     relText = relative(date, gran);
   }
 
-  // Relative is the cognitive value-add ("today", "5 hours ago") — it
-  // gets the lead. Capitalized so it reads like a heading. The precise
-  // datetime sits underneath as supporting precision.
-  lines.push(`<div class="dn-lead">${escapeHtml(capFirst(relText))}</div>`);
-  lines.push(`<div class="dn-sub">${escapeHtml(dateText)}</div>`);
+  // Lead = whichever piece the source ISN'T. Absolute source → relative
+  // leads (the cognitive value-add). Relative source ("yesterday") →
+  // the resolved date leads (the user already had the relative).
+  const leadText = isRelSource ? dateText : capFirst(relText);
+  const subText = isRelSource ? capFirst(relText) : dateText;
+  lines.push(`<div class="dn-lead">${escapeHtml(leadText)}</div>`);
+  lines.push(`<div class="dn-sub">${escapeHtml(subText)}</div>`);
 
   if (gran !== "month" && settings.extraTimezones.length) {
     let extras = `<div class="dn-extras">`;
@@ -774,7 +778,11 @@ function showTooltip(target) {
   const date = new Date(iso);
   if (isNaN(date.getTime())) return;
   ensureTooltip();
-  tooltipEl.innerHTML = renderTooltipContent(date, target.dataset.gran || "day");
+  tooltipEl.innerHTML = renderTooltipContent(
+    date,
+    target.dataset.gran || "day",
+    target.dataset.rel === "1"
+  );
   positionTooltip(target);
 }
 
