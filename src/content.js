@@ -689,34 +689,66 @@ const MONTH_FMT = new Intl.DateTimeFormat(undefined, {
   month: "long",
 });
 
+function fmtPart(date, tz, opts) {
+  return new Intl.DateTimeFormat(undefined, { ...opts, timeZone: tz }).format(date);
+}
+function dayKey(date, tz) {
+  // sortable YYYY-MM-DD in `tz`, used to detect day shifts vs local.
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric", month: "2-digit", day: "2-digit", timeZone: tz,
+  }).format(date);
+}
+function fmtFullLocal(date, withTime) {
+  // "Sat, May 23, 2026" or "Sat, May 23, 2026, 17:42"
+  const opts = { weekday: "short", year: "numeric", month: "short", day: "numeric" };
+  if (withTime) Object.assign(opts, { hour: "2-digit", minute: "2-digit", hour12: false });
+  return new Intl.DateTimeFormat(undefined, opts).format(date);
+}
+
 function renderTooltipContent(date, gran, isRelSource) {
   const lines = [];
   if (gran === "month") {
-    // Month source ("May 2024") — date string is more useful than "2 years
-    // ago", which the user already kind of knows from reading "May 2024".
     lines.push(`<div class="dn-row dn-primary">${escapeHtml(MONTH_FMT.format(date))}</div>`);
     lines.push(`<div class="dn-row dn-rel">${escapeHtml(relative(date, "month"))}</div>`);
     return lines.join("");
   }
   const withTime = gran === "time";
-  const formatted = formatInTz(date, userTz, withTime);
+  const formatted = fmtFullLocal(date, withTime);
   const rel = relative(date, gran);
 
-  // Headline = whichever flavor the source is NOT. If the source was an
-  // absolute date, the new info is the relative interpretation; if the
-  // source was a relative phrase, the new info is the resolved date.
+  // Headline = whichever flavor the source ISN'T.
   const headline = isRelSource ? formatted : rel;
   const byline = isRelSource ? rel : formatted;
 
   lines.push(`<div class="dn-row dn-primary">${escapeHtml(headline)}</div>`);
   lines.push(`<div class="dn-row dn-rel">${escapeHtml(byline)}</div>`);
 
-  for (const tz of settings.extraTimezones) {
-    lines.push(
-      `<div class="dn-row dn-extra"><span class="dn-tz">${escapeHtml(
-        shortTzLabel(tz)
-      )}</span><span class="dn-val">${escapeHtml(formatInTz(date, tz, withTime))}</span></div>`
-    );
+  // Per-zone comparison: zone | day-of-week date | time. Day prefix
+  // gets an accent tint when the zone is on a different calendar day
+  // than the user's local — the one piece of "is this a different day
+  // for them?" signal that's worth ink.
+  if (settings.extraTimezones.length) {
+    const localDay = dayKey(date, userTz);
+    for (const tz of settings.extraTimezones) {
+      const tzDay = dayKey(date, tz);
+      const shifted = tzDay !== localDay;
+      const dow = fmtPart(date, tz, { weekday: "short" });
+      const md = fmtPart(date, tz, { month: "short", day: "numeric" });
+      const tm = withTime
+        ? fmtPart(date, tz, { hour: "2-digit", minute: "2-digit", hour12: false })
+        : "";
+      const dowClass = shifted ? "dn-day dn-shifted" : "dn-day";
+      lines.push(
+        `<div class="dn-row dn-extra">` +
+        `<span class="dn-tz">${escapeHtml(shortTzLabel(tz))}</span>` +
+        `<span class="dn-when">` +
+        `<span class="${dowClass}">${escapeHtml(dow)}</span> ` +
+        `<span class="dn-md">${escapeHtml(md)}</span>` +
+        (tm ? `<span class="dn-time">${escapeHtml(tm)}</span>` : "") +
+        `</span>` +
+        `</div>`
+      );
+    }
   }
   return lines.join("");
 }

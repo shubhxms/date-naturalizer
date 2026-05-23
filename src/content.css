@@ -6,12 +6,11 @@
 }
 
 /* =============================================================
-   Hover tooltip
-   Hierarchy:
-     1. primary  — the answer to "when is this in my zone?"
-     2. relative — its byline ("today", "5 days ago")
-     3. extras   — a small comparison table for other zones
-   One typeface, tabular numerals for alignment.
+   Hover tooltip — text-first, one bit of color for day-shift.
+   Headline: whichever interpretation the source ISN'T.
+   Byline: precise / echo.
+   Extras: zone · day-date · time. Day-of-week tints if it
+   crosses a different calendar day than the user's local.
    ============================================================= */
 .dn-tooltip {
   position: fixed;
@@ -51,7 +50,6 @@
   white-space: nowrap;
 }
 
-/* 1 — primary */
 .dn-tooltip .dn-primary {
   font-size: 14px;
   font-weight: 600;
@@ -60,7 +58,6 @@
   letter-spacing: -0.012em;
 }
 
-/* 2 — relative, attached under the primary */
 .dn-tooltip .dn-rel {
   font-size: 11px;
   font-weight: 400;
@@ -69,15 +66,14 @@
   margin-top: 3px;
 }
 
-/* 3 — extras: small comparison table */
+/* extras: small zone-comparison table */
 .dn-tooltip .dn-extra {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 20px;
-  font-size: 11.5px;
+  gap: 14px;
+  font-size: 11px;
   line-height: 1.65;
-  color: rgba(244, 244, 245, 0.92);
+  color: rgba(244, 244, 245, 0.9);
 }
 
 .dn-tooltip .dn-extra:first-of-type {
@@ -87,14 +83,37 @@
 }
 
 .dn-tooltip .dn-tz {
+  flex: 0 0 auto;
+  min-width: 52px;
+  color: rgba(244, 244, 245, 0.5);
   font-size: 10.5px;
-  font-weight: 400;
-  color: rgba(244, 244, 245, 0.48);
-  letter-spacing: 0;
   white-space: nowrap;
 }
 
-.dn-tooltip .dn-val {
-  text-align: right;
+.dn-tooltip .dn-when {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8px;
   white-space: nowrap;
+}
+
+.dn-tooltip .dn-day {
+  color: rgba(244, 244, 245, 0.55);
+  letter-spacing: 0.005em;
+}
+
+/* the one bit of color: zone is on a different calendar day */
+.dn-tooltip .dn-day.dn-shifted {
+  color: #ea7039;
+}
+
+.dn-tooltip .dn-md {
+  color: rgba(244, 244, 245, 0.7);
+}
+
+.dn-tooltip .dn-time {
+  color: rgba(244, 244, 245, 0.95);
+  font-variant-numeric: tabular-nums;
 }
