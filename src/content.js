@@ -590,6 +590,7 @@ function scanBlock(blockEl, nodes) {
     }
     const iso = isoForResult(r, ctxTz, blockEl, combined, nearAbsDate);
     const gran = classifyGranularity(r, ext.text);
+    const isRel = !MONTH_NAME.test(r.text) && !ISO_DATE.test(r.text);
     for (const entry of map) {
       if (entry.end <= absS) continue;
       if (entry.start >= absE) break;
@@ -601,7 +602,7 @@ function scanBlock(blockEl, nodes) {
         arr = [];
         ops.set(entry.node, arr);
       }
-      arr.push({ start: localS, end: localE, iso, gran });
+      arr.push({ start: localS, end: localE, iso, gran, isRel });
     }
   }
 
@@ -636,6 +637,7 @@ function wrapRangesInNode(textNode, ranges) {
     span.textContent = text.slice(r.start, r.end);
     span.dataset.iso = r.iso;
     span.dataset.gran = r.gran;
+    if (r.isRel) span.dataset.rel = "1";
     frag.appendChild(span);
     wrapped.add(span);
     cursor = r.end;
@@ -687,19 +689,28 @@ const MONTH_FMT = new Intl.DateTimeFormat(undefined, {
   month: "long",
 });
 
-function renderTooltipContent(date, gran) {
+function renderTooltipContent(date, gran, isRelSource) {
   const lines = [];
   if (gran === "month") {
-    // Month+year only — not an instant, no TZ conversion meaningful.
+    // Month source ("May 2024") — date string is more useful than "2 years
+    // ago", which the user already kind of knows from reading "May 2024".
     lines.push(`<div class="dn-row dn-primary">${escapeHtml(MONTH_FMT.format(date))}</div>`);
     lines.push(`<div class="dn-row dn-rel">${escapeHtml(relative(date, "month"))}</div>`);
     return lines.join("");
   }
   const withTime = gran === "time";
-  lines.push(
-    `<div class="dn-row dn-primary">${escapeHtml(formatInTz(date, userTz, withTime))}</div>`
-  );
-  lines.push(`<div class="dn-row dn-rel">${escapeHtml(relative(date, gran))}</div>`);
+  const formatted = formatInTz(date, userTz, withTime);
+  const rel = relative(date, gran);
+
+  // Headline = whichever flavor the source is NOT. If the source was an
+  // absolute date, the new info is the relative interpretation; if the
+  // source was a relative phrase, the new info is the resolved date.
+  const headline = isRelSource ? formatted : rel;
+  const byline = isRelSource ? rel : formatted;
+
+  lines.push(`<div class="dn-row dn-primary">${escapeHtml(headline)}</div>`);
+  lines.push(`<div class="dn-row dn-rel">${escapeHtml(byline)}</div>`);
+
   for (const tz of settings.extraTimezones) {
     lines.push(
       `<div class="dn-row dn-extra"><span class="dn-tz">${escapeHtml(
@@ -740,7 +751,11 @@ function showTooltip(target) {
   const date = new Date(iso);
   if (isNaN(date.getTime())) return;
   ensureTooltip();
-  tooltipEl.innerHTML = renderTooltipContent(date, target.dataset.gran || "day");
+  tooltipEl.innerHTML = renderTooltipContent(
+    date,
+    target.dataset.gran || "day",
+    target.dataset.rel === "1"
+  );
   positionTooltip(target);
 }
 
