@@ -3,7 +3,7 @@ import { formatInTz, relative, shortTzLabel } from "./lib/format.js";
 
 const SKIP_TAGS = new Set([
   "SCRIPT", "STYLE", "NOSCRIPT", "TEXTAREA", "INPUT", "CODE", "PRE",
-  "SELECT", "OPTION", "BUTTON",
+  "SELECT", "OPTION",
 ]);
 
 const MIN_TEXT = 4;
@@ -269,13 +269,14 @@ function blockAncestor(node) {
   let n = node.nodeType === 1 ? node : node.parentNode;
   while (n) {
     if (n.nodeType === 1 && BLOCK_TAGS.has(n.tagName)) return n;
+    if (n.nodeType === 11) return n; // ShadowRoot / DocumentFragment — boundary
     n = n.parentNode;
   }
   return null;
 }
 
 function scanRoot(root) {
-  if (!root || (root.nodeType !== 1 && root.nodeType !== 9)) return;
+  if (!root || (root.nodeType !== 1 && root.nodeType !== 9 && root.nodeType !== 11)) return;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(n) {
       if (!n.nodeValue || n.nodeValue.length < 2) return NodeFilter.FILTER_REJECT;
@@ -299,6 +300,36 @@ function scanRoot(root) {
     if (wrapped.size >= MAX_SPANS) break;
     scanBlock(block, nodes);
   }
+
+  // Recurse into open shadow roots (used by YouTube, many web components).
+  if (root.querySelectorAll) {
+    for (const el of root.querySelectorAll("*")) {
+      const sr = el.shadowRoot;
+      if (sr && sr.mode !== "closed") {
+        scanRoot(sr);
+        observeShadowRoot(sr);
+      }
+    }
+  }
+}
+
+const observedShadowRoots = new WeakSet();
+function observeShadowRoot(sr) {
+  if (observedShadowRoots.has(sr)) return;
+  observedShadowRoots.add(sr);
+  const obs = new MutationObserver((muts) => {
+    for (const m of muts) {
+      if (m.type === "childList") {
+        for (const node of m.addedNodes) {
+          if (node.nodeType === 1) scheduleScan(node);
+          else if (node.nodeType === 3 && node.parentNode) scheduleScan(node.parentNode);
+        }
+      } else if (m.type === "characterData" && m.target.parentNode) {
+        scheduleScan(m.target.parentNode);
+      }
+    }
+  });
+  obs.observe(sr, { childList: true, subtree: true, characterData: true });
 }
 
 function scanBlock(blockEl, nodes) {
