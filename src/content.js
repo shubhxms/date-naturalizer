@@ -305,14 +305,24 @@ function isDurationPhrase(text) {
 const DATE_HINTS =
   /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Mon(?:day)?|Tue(?:s(?:day)?)?|Wed(?:nesday)?|Thu(?:rs(?:day)?)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?|ago|today|tomorrow|yesterday|tonight|noon|midnight|now|last|next|this|coming|past|recent|hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|day|days|week|weeks|month|months|year|years|morning|afternoon|evening|night)\b|\d{4}-\d{2}-\d{2}/i;
 
-// Trust chrono. Reject only obvious junk: too short, purely numeric
-// ranges like "129–130" (unless it's a real ISO date), or duration
-// phrases that chrono speculatively resolves to a future date.
-function isWantedMatch(result) {
+// Cheap sanity check that's safe to run BEFORE merging. Anything that
+// passes can still be merged with a sibling (e.g. a time-only "5:47
+// AM" can merge with an adjacent "May 23, 2026"), and the full filter
+// then runs on the merged text.
+function isValidMatch(result) {
   if (!result.start) return false;
   const t = (result.text || "").trim();
   if (t.length < 3) return false;
   if (!HAS_LETTER.test(t) && !ISO_DATE.test(t)) return false;
+  return true;
+}
+
+// Final filter applied AFTER merging. Drops filler ("now", "today"),
+// duration phrases, and — when convertRelatives is off — anything that
+// isn't an absolute date. A time-only match that merged with a date
+// will pass this because the merged text contains the month.
+function isWantedMatch(result) {
+  const t = (result.text || "").trim();
   if (FILLER_WORDS.test(t)) return false;
   if (isDurationPhrase(t)) return false;
   if (!settings.convertRelatives) {
@@ -538,8 +548,11 @@ function scanBlock(blockEl, nodes) {
   // underline visually covers the whole date+time even though the DOM
   // is fragmented. All sub-ranges share the same data-iso and data-gran.
   const ops = new Map();
-  const filtered = results.filter((r) => isWantedMatch(r) && r.index >= 0 && r.text);
-  const merged = mergeAdjacentPairs(filtered, combined);
+  // Two-stage filter: basic validity before merge (so time-only
+  // matches survive long enough to be merged with adjacent dates),
+  // full filter after merge.
+  const valid = results.filter((r) => isValidMatch(r) && r.index >= 0);
+  const merged = mergeAdjacentPairs(valid, combined).filter(isWantedMatch);
 
   // Pre-compute absolute matches (date or ISO in text) so we can anchor
   // any relative phrase in this block to the closest one.
