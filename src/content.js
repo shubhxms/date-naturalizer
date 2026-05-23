@@ -236,25 +236,107 @@ function isWantedMatch(result) {
 // connector words ("on", "by", "in", etc.) — anchor at the first date
 // token (ISO date, or day-digit-before-month, or month name) — but keep
 // trailing time/timezone tokens which are part of the same instant.
+const TIME_TOKEN = /\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp]\.?[Mm]\.?)?/;
+
 function findExtent(text) {
   const iso = text.match(ISO_DATE);
   const month = text.match(MONTH_NAME);
+  const time = text.match(TIME_TOKEN);
+
+  // Pick the earliest of {iso, month-with-day, time} as the start anchor.
+  const candidates = [];
+  if (iso) candidates.push(iso.index);
+  if (time) candidates.push(time.index);
+  if (month) {
+    let mStart = month.index;
+    const left = text.slice(0, mStart).match(/\d{1,2}(?:st|nd|rd|th)?[\s,\-\.]+$/i);
+    if (left) mStart -= left[0].length;
+    candidates.push(mStart);
+  }
+
   let s;
-  if (iso && (!month || iso.index <= month.index)) {
-    s = iso.index;
-  } else if (month) {
-    s = month.index;
-    const left = text.slice(0, s).match(/\d{1,2}(?:st|nd|rd|th)?[\s,\-\.]+$/i);
-    if (left) s -= left[0].length;
+  if (candidates.length) {
+    s = Math.min(...candidates);
   } else {
-    // Relative phrase — keep the whole match. Leading connectors like
-    // "in" are part of the meaning ("in 3 days" vs "3 days ago").
+    // Relative phrase — keep the whole match.
     s = 0;
     while (s < text.length && /\s/.test(text[s])) s++;
   }
   let e = text.length;
   while (e > s && /[\s.,;:!?]/.test(text[e - 1])) e--;
   return e > s ? { start: s, end: e, text: text.slice(s, e) } : null;
+}
+
+// Some sites (Twitter/X) write a tweet timestamp as "5:42 PM · May 23,
+// 2026" — the U+00B7 middle dot breaks chrono's own merge so we get two
+// matches. Merge any adjacent time-only + date-only pair whose gap is
+// pure separator punctuation into a single match carrying the combined
+// instant.
+const MERGE_GAP = /^[\s·•∙–—,;:|\-]+$/;
+
+function mergeTimeAndDate(timeM, dateM, combined) {
+  const earliest = timeM.index <= dateM.index ? timeM : dateM;
+  const latest = timeM.index <= dateM.index ? dateM : timeM;
+  const startIdx = earliest.index;
+  const endIdx = latest.index + latest.text.length;
+  const ds = dateM.start;
+  const ts = timeM.start;
+  const dDate = ds.date();
+  const tDate = ts.date();
+  const mergedDate = new Date(dDate);
+  mergedDate.setHours(
+    tDate.getHours(),
+    tDate.getMinutes(),
+    tDate.getSeconds(),
+    0
+  );
+  return {
+    index: startIdx,
+    text: combined.slice(startIdx, endIdx),
+    start: {
+      date: () => mergedDate,
+      isCertain: (k) =>
+        k === "hour" || k === "minute" || k === "second"
+          ? ts.isCertain(k)
+          : ds.isCertain(k),
+      get: (k) =>
+        k === "hour" || k === "minute" || k === "second"
+          ? ts.get(k)
+          : ds.get(k),
+    },
+  };
+}
+
+function mergeAdjacentPairs(matches, combined) {
+  matches.sort((a, b) => a.index - b.index);
+  const out = [];
+  let i = 0;
+  while (i < matches.length) {
+    const a = matches[i];
+    const b = matches[i + 1];
+    if (b) {
+      const gap = combined.slice(a.index + a.text.length, b.index);
+      if (gap.length > 0 && gap.length <= 5 && MERGE_GAP.test(gap)) {
+        const aHasTime = a.start.isCertain("hour");
+        const bHasTime = b.start.isCertain("hour");
+        const aHasDate = MONTH_NAME.test(a.text) || ISO_DATE.test(a.text);
+        const bHasDate = MONTH_NAME.test(b.text) || ISO_DATE.test(b.text);
+        if (aHasTime && !aHasDate && bHasDate && !bHasTime) {
+          out.push(mergeTimeAndDate(a, b, combined));
+          i += 2;
+          continue;
+        }
+        if (!aHasTime && aHasDate && !bHasDate && bHasTime) {
+          out.push(mergeTimeAndDate(b, a, combined));
+          i += 2;
+          continue;
+        }
+      }
+    }
+    out.push(a);
+    i++;
+  }
+  return out;
 }
 
 // Classify the wrap's display granularity from the anchor text.
@@ -367,8 +449,9 @@ function scanBlock(blockEl, nodes) {
   // underline visually covers the whole date+time even though the DOM
   // is fragmented. All sub-ranges share the same data-iso and data-gran.
   const ops = new Map();
-  for (const r of results.sort((a, b) => a.index - b.index)) {
-    if (!isWantedMatch(r) || r.index < 0 || !r.text) continue;
+  const filtered = results.filter((r) => isWantedMatch(r) && r.index >= 0 && r.text);
+  const merged = mergeAdjacentPairs(filtered, combined);
+  for (const r of merged) {
     const ext = findExtent(r.text);
     if (!ext) continue;
     const absS = r.index + ext.start;
