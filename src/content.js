@@ -241,19 +241,32 @@ const HAS_LETTER = /[A-Za-z]/;
 // future dates. Narrow scope: only "in/for/after/over/within N
 // month|year|decade|century" and "N month|year|decade later". Keeps
 // "in 3 days", "in 5 hours", "two months ago", "yesterday", etc.
+// Multi-word alternatives must come first — regex alternation is
+// left-greedy at the same position, so "a" would win over "a few".
 const NUM_WORD =
-  /(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|few|many|couple\s+of|\d+(?:[.,]\d+)?)/;
+  /(?:a\s+few|a\s+couple\s+of|couple\s+of|several|many|few|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a|an|\d+(?:[.,]\d+)?)/;
 const BIG_UNIT = /(?:month|year|decade|centur(?:y|ies))s?/;
+const ANY_UNIT =
+  /(?:second|minute|hour|day|week|month|year|decade|centur(?:y|ies))s?/;
+// "in/for/over/… N <large_unit>" — chrono speculatively projects this
+// to a future date but it's almost always a duration in prose. Only
+// large units (≥ month) so we keep "in 3 days" / "in 5 hours".
 const DURATION_PREFIXED = new RegExp(
   `^(?:in|for|over|within|after|past)\\s+(?:about\\s+|nearly\\s+|almost\\s+|roughly\\s+)?${NUM_WORD.source}\\s+${BIG_UNIT.source}\\s*$`,
   "i"
 );
-const DURATION_LATER = new RegExp(
-  `^(?:about\\s+|nearly\\s+|almost\\s+|roughly\\s+)?${NUM_WORD.source}\\s+${BIG_UNIT.source}\\s+later\\s*$`,
+// "N <unit> later/earlier/after/before/hence" — anchored to some
+// implicit event, not to "now". Any unit qualifies.
+const DURATION_TRAILING = new RegExp(
+  `^(?:about\\s+|nearly\\s+|almost\\s+|roughly\\s+)?${NUM_WORD.source}\\s+${ANY_UNIT.source}\\s+(?:later|earlier|after|before|hence)\\s*$`,
   "i"
 );
+// Standalone words that are usually conversational filler ("Bun looks
+// nothing like it does today") rather than date pointers. Skip them
+// even though chrono resolves them.
+const FILLER_WORDS = /^(?:(?:right\s+)?now|today|tonight)$/i;
 function isDurationPhrase(text) {
-  return DURATION_PREFIXED.test(text) || DURATION_LATER.test(text);
+  return DURATION_PREFIXED.test(text) || DURATION_TRAILING.test(text);
 }
 
 // Anything that could plausibly contain a date or relative phrase.
@@ -266,9 +279,10 @@ const DATE_HINTS =
 // phrases that chrono speculatively resolves to a future date.
 function isWantedMatch(result) {
   if (!result.start) return false;
-  const t = result.text || "";
+  const t = (result.text || "").trim();
   if (t.length < 3) return false;
   if (!HAS_LETTER.test(t) && !ISO_DATE.test(t)) return false;
+  if (FILLER_WORDS.test(t)) return false;
   if (isDurationPhrase(t)) return false;
   return true;
 }
