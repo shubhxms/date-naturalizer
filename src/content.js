@@ -60,23 +60,25 @@ function isWantedMatch(result) {
   return MONTH_NAME.test(t) && ANY_DIGIT.test(t);
 }
 
-// Extract the date-anchor sub-range from a chrono match. The match may
-// include trailing time/timezone tokens that live in a different text
-// node; we only underline the date portion and rely on data-iso to carry
-// the full instant.
-function findAnchor(text) {
+// Find the underlinable extent within a chrono match. We trim leading
+// connector words ("on", "by", "in", etc.) — anchor at the first date
+// token (ISO date, or day-digit-before-month, or month name) — but keep
+// trailing time/timezone tokens which are part of the same instant.
+function findExtent(text) {
   const iso = text.match(ISO_DATE);
-  if (iso) return { start: iso.index, end: iso.index + iso[0].length, text: iso[0] };
-  const m = text.match(MONTH_NAME);
-  if (!m) return null;
-  let s = m.index;
-  let e = m.index + m[0].length;
-  const left = text.slice(0, s).match(/\d{1,2}(?:st|nd|rd|th)?[\s,\-\.]+$/i);
-  if (left) s -= left[0].length;
-  const right = text
-    .slice(e)
-    .match(/^(?:[\s,\-\.]+\d{1,2}(?:st|nd|rd|th)?)?(?:[\s,]+\d{4})?\b/i);
-  if (right && right[0].length) e += right[0].length;
+  const month = text.match(MONTH_NAME);
+  let s;
+  if (iso && (!month || iso.index <= month.index)) {
+    s = iso.index;
+  } else if (month) {
+    s = month.index;
+    const left = text.slice(0, s).match(/\d{1,2}(?:st|nd|rd|th)?[\s,\-\.]+$/i);
+    if (left) s -= left[0].length;
+  } else {
+    return null;
+  }
+  let e = text.length;
+  while (e > s && /[\s.,;:!?]/.test(text[e - 1])) e--;
   return { start: s, end: e, text: text.slice(s, e) };
 }
 
@@ -146,30 +148,34 @@ function scanBlock(nodes) {
   }
   if (!results.length) return;
 
-  // Group wrap operations by the text node that contains the date anchor,
-  // so we can split each node exactly once.
+  // Group wrap operations by text node. A single chrono match may span
+  // multiple text nodes (e.g. "26 January 2001 at <span>08:46 IST</span>"
+  // splits across two siblings); we wrap each node's intersection so the
+  // underline visually covers the whole date+time even though the DOM
+  // is fragmented. All sub-ranges share the same data-iso and data-gran.
   const ops = new Map();
   for (const r of results.sort((a, b) => a.index - b.index)) {
     if (!isWantedMatch(r) || r.index < 0 || !r.text) continue;
-    const anchor = findAnchor(r.text);
-    if (!anchor) continue;
-    const absS = r.index + anchor.start;
-    const absE = r.index + anchor.end;
-    const entry = map.find((e) => absS >= e.start && absS < e.end);
-    if (!entry || absE > entry.end) continue; // anchor crosses node boundary — skip
+    const ext = findExtent(r.text);
+    if (!ext) continue;
+    const absS = r.index + ext.start;
+    const absE = r.index + ext.end;
+    if (absE <= absS) continue;
     const iso = r.start.date().toISOString();
-    const gran = classifyGranularity(r, anchor.text);
-    let arr = ops.get(entry.node);
-    if (!arr) {
-      arr = [];
-      ops.set(entry.node, arr);
+    const gran = classifyGranularity(r, ext.text);
+    for (const entry of map) {
+      if (entry.end <= absS) continue;
+      if (entry.start >= absE) break;
+      const localS = Math.max(absS, entry.start) - entry.start;
+      const localE = Math.min(absE, entry.end) - entry.start;
+      if (localE <= localS) continue;
+      let arr = ops.get(entry.node);
+      if (!arr) {
+        arr = [];
+        ops.set(entry.node, arr);
+      }
+      arr.push({ start: localS, end: localE, iso, gran });
     }
-    arr.push({
-      start: absS - entry.start,
-      end: absE - entry.start,
-      iso,
-      gran,
-    });
   }
 
   for (const [textNode, ranges] of ops) {
