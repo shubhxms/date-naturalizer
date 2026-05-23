@@ -164,13 +164,24 @@ function findContextTz(blockEl) {
   return null;
 }
 
-function isoForResult(result, ctxTz, blockEl, combined) {
+function isoForResult(result, ctxTz, blockEl, combined, nearAbsDate) {
   const s = result.start;
+  const t = result.text || "";
+  const isAbsolute = MONTH_NAME.test(t) || ISO_DATE.test(t);
+  // Relative phrases ("yesterday", "5 days ago") should anchor on the
+  // nearest absolute date in the same block — e.g. each tweet's own
+  // timestamp — not on the page's pub date or today.
+  if (!isAbsolute && nearAbsDate) {
+    try {
+      const r = chrono.parse(t, nearAbsDate)[0];
+      if (r && r.start && typeof r.start.date === "function") {
+        return r.start.date().toISOString();
+      }
+    } catch {}
+  }
   // Only override the year for absolute date matches. For relative
   // phrases the year already comes from chrono's resolution against
   // the article publication date.
-  const t = result.text || "";
-  const isAbsolute = MONTH_NAME.test(t) || ISO_DATE.test(t);
   let year = s.get("year");
   let yearOverridden = false;
   if (isAbsolute && !s.isCertain("year")) {
@@ -506,13 +517,42 @@ function scanBlock(blockEl, nodes) {
   const ops = new Map();
   const filtered = results.filter((r) => isWantedMatch(r) && r.index >= 0 && r.text);
   const merged = mergeAdjacentPairs(filtered, combined);
+
+  // Pre-compute absolute matches (date or ISO in text) so we can anchor
+  // any relative phrase in this block to the closest one.
+  const absoluteRefs = [];
+  for (const m of merged) {
+    if (MONTH_NAME.test(m.text) || ISO_DATE.test(m.text)) {
+      try {
+        absoluteRefs.push({ index: m.index, date: m.start.date() });
+      } catch {}
+    }
+  }
+
   for (const r of merged) {
     const ext = findExtent(r.text);
     if (!ext) continue;
     const absS = r.index + ext.start;
     const absE = r.index + ext.end;
     if (absE <= absS) continue;
-    const iso = isoForResult(r, ctxTz, blockEl, combined);
+    let nearAbsDate = null;
+    if (
+      absoluteRefs.length &&
+      !MONTH_NAME.test(r.text) &&
+      !ISO_DATE.test(r.text)
+    ) {
+      let best = null;
+      let bestDist = Infinity;
+      for (const a of absoluteRefs) {
+        const d = Math.abs(a.index - r.index);
+        if (d < bestDist) {
+          bestDist = d;
+          best = a;
+        }
+      }
+      if (best) nearAbsDate = best.date;
+    }
+    const iso = isoForResult(r, ctxTz, blockEl, combined, nearAbsDate);
     const gran = classifyGranularity(r, ext.text);
     for (const entry of map) {
       if (entry.end <= absS) continue;
