@@ -217,6 +217,11 @@ const ANY_DIGIT = /\d/;
 
 const HAS_LETTER = /[A-Za-z]/;
 
+// Anything that could plausibly contain a date or relative phrase.
+// Used as a cheap pre-filter before calling chrono.
+const DATE_HINTS =
+  /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Mon(?:day)?|Tue(?:s(?:day)?)?|Wed(?:nesday)?|Thu(?:rs(?:day)?)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?|ago|today|tomorrow|yesterday|tonight|noon|midnight|now|last|next|this|coming|past|recent|hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|day|days|week|weeks|month|months|year|years|morning|afternoon|evening|night)\b|\d{4}-\d{2}-\d{2}/i;
+
 // Trust chrono. Reject only obvious junk: too short, or purely
 // numeric ranges like "129–130" (unless it's a real ISO date).
 function isWantedMatch(result) {
@@ -341,8 +346,10 @@ function scanBlock(blockEl, nodes) {
     map.push({ node: n, start, end: combined.length });
   }
   if (combined.length < MIN_TEXT || combined.length > MAX_TEXT) return;
-  // Cheap pre-filter: avoid invoking chrono if nothing date-looking is here.
-  if (!MONTH_NAME.test(combined) && !ISO_DATE.test(combined)) return;
+  // Cheap pre-filter: skip blocks that can't possibly contain a date.
+  // Includes absolute date tokens AND relative phrases ("6 hours ago",
+  // "yesterday", "last Friday", "in 3 days").
+  if (!DATE_HINTS.test(combined)) return;
 
   let results;
   try {
