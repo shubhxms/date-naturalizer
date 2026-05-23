@@ -103,8 +103,27 @@ const PAGE_YEAR_FALLBACK = (() => {
   return null;
 })();
 
-function findContextYear(blockEl) {
-  let n = blockEl;
+const YEAR_RE_G = /\b(1[89]\d{2}|20\d{2})\b/g;
+// Max character distance for a year mention to be considered context
+// for a date in the same block. Beyond this, the year probably belongs
+// to a different topic ("Tufte's 1983 book" in a 2026 article).
+const MAX_YEAR_DIST = 80;
+
+function findContextYear(combined, matchIndex, blockEl) {
+  if (combined != null && matchIndex != null) {
+    const yrs = [...combined.matchAll(YEAR_RE_G)];
+    let best = null;
+    let bestDist = MAX_YEAR_DIST + 1;
+    for (const m of yrs) {
+      const d = Math.abs(m.index - matchIndex);
+      if (d < bestDist) {
+        bestDist = d;
+        best = m;
+      }
+    }
+    if (best && bestDist <= MAX_YEAR_DIST) return parseInt(best[1], 10);
+  }
+  let n = blockEl ? blockEl.parentElement : null;
   let depth = 0;
   while (n && n.nodeType === 1 && depth < 6) {
     const txt = n.textContent || "";
@@ -145,7 +164,7 @@ function findContextTz(blockEl) {
   return null;
 }
 
-function isoForResult(result, ctxTz, blockEl) {
+function isoForResult(result, ctxTz, blockEl, combined) {
   const s = result.start;
   // Only override the year for absolute date matches. For relative
   // phrases the year already comes from chrono's resolution against
@@ -155,7 +174,7 @@ function isoForResult(result, ctxTz, blockEl) {
   let year = s.get("year");
   let yearOverridden = false;
   if (isAbsolute && !s.isCertain("year")) {
-    const ny = findContextYear(blockEl);
+    const ny = findContextYear(combined, result.index, blockEl);
     if (ny != null && ny !== year) {
       year = ny;
       yearOverridden = true;
@@ -217,18 +236,40 @@ const ANY_DIGIT = /\d/;
 
 const HAS_LETTER = /[A-Za-z]/;
 
+// Duration phrases that chrono resolves to a specific instant but are
+// almost always durations in prose ("we shipped in 3.5 years"), not
+// future dates. Narrow scope: only "in/for/after/over/within N
+// month|year|decade|century" and "N month|year|decade later". Keeps
+// "in 3 days", "in 5 hours", "two months ago", "yesterday", etc.
+const NUM_WORD =
+  /(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|few|many|couple\s+of|\d+(?:[.,]\d+)?)/;
+const BIG_UNIT = /(?:month|year|decade|centur(?:y|ies))s?/;
+const DURATION_PREFIXED = new RegExp(
+  `^(?:in|for|over|within|after|past)\\s+(?:about\\s+|nearly\\s+|almost\\s+|roughly\\s+)?${NUM_WORD.source}\\s+${BIG_UNIT.source}\\s*$`,
+  "i"
+);
+const DURATION_LATER = new RegExp(
+  `^(?:about\\s+|nearly\\s+|almost\\s+|roughly\\s+)?${NUM_WORD.source}\\s+${BIG_UNIT.source}\\s+later\\s*$`,
+  "i"
+);
+function isDurationPhrase(text) {
+  return DURATION_PREFIXED.test(text) || DURATION_LATER.test(text);
+}
+
 // Anything that could plausibly contain a date or relative phrase.
 // Used as a cheap pre-filter before calling chrono.
 const DATE_HINTS =
   /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Mon(?:day)?|Tue(?:s(?:day)?)?|Wed(?:nesday)?|Thu(?:rs(?:day)?)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?|ago|today|tomorrow|yesterday|tonight|noon|midnight|now|last|next|this|coming|past|recent|hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|day|days|week|weeks|month|months|year|years|morning|afternoon|evening|night)\b|\d{4}-\d{2}-\d{2}/i;
 
-// Trust chrono. Reject only obvious junk: too short, or purely
-// numeric ranges like "129–130" (unless it's a real ISO date).
+// Trust chrono. Reject only obvious junk: too short, purely numeric
+// ranges like "129–130" (unless it's a real ISO date), or duration
+// phrases that chrono speculatively resolves to a future date.
 function isWantedMatch(result) {
   if (!result.start) return false;
   const t = result.text || "";
   if (t.length < 3) return false;
   if (!HAS_LETTER.test(t) && !ISO_DATE.test(t)) return false;
+  if (isDurationPhrase(t)) return false;
   return true;
 }
 
@@ -457,7 +498,7 @@ function scanBlock(blockEl, nodes) {
     const absS = r.index + ext.start;
     const absE = r.index + ext.end;
     if (absE <= absS) continue;
-    const iso = isoForResult(r, ctxTz, blockEl);
+    const iso = isoForResult(r, ctxTz, blockEl, combined);
     const gran = classifyGranularity(r, ext.text);
     for (const entry of map) {
       if (entry.end <= absS) continue;
