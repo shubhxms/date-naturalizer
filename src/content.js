@@ -19,6 +19,72 @@ const BLOCK_TAGS = new Set([
 
 const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+// Article publication date — used as chrono's reference so that relative
+// phrases ("yesterday", "in 3 days") resolve against when the page was
+// written, not when it's being read. Falls back to today if not found.
+function collectDates(obj, out) {
+  if (!obj || typeof obj !== "object") return;
+  if (Array.isArray(obj)) {
+    for (const v of obj) collectDates(v, out);
+    return;
+  }
+  for (const k of ["datePublished", "dateCreated", "uploadDate"]) {
+    if (typeof obj[k] === "string") out.push(obj[k]);
+  }
+  for (const v of Object.values(obj)) collectDates(v, out);
+}
+
+function detectPubDate() {
+  try {
+    for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+      try {
+        const data = JSON.parse(s.textContent || "");
+        const out = [];
+        collectDates(data, out);
+        for (const v of out) {
+          const d = new Date(v);
+          if (!isNaN(d.getTime())) return d;
+        }
+      } catch {}
+    }
+  } catch {}
+  const metaSelectors = [
+    'meta[property="article:published_time"]',
+    'meta[property="og:article:published_time"]',
+    'meta[name="article:published_time"]',
+    'meta[itemprop="datePublished"]',
+    'meta[name="datePublished"]',
+    'meta[name="DC.date.issued"]',
+    'meta[name="DC.date"]',
+    'meta[name="date"]',
+    'meta[name="pubdate"]',
+    'meta[name="publishdate"]',
+  ];
+  for (const sel of metaSelectors) {
+    const el = document.querySelector(sel);
+    const val = el && el.getAttribute("content");
+    if (val) {
+      const d = new Date(val);
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+  const time = document.querySelector(
+    'article time[datetime][pubdate], article time[datetime][itemprop="datePublished"], time[datetime][pubdate]'
+  );
+  if (time) {
+    const dt = time.getAttribute("datetime");
+    if (dt) {
+      const d = new Date(dt);
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+  return null;
+}
+const pubDate = detectPubDate();
+function makeRefDate() {
+  return pubDate ? new Date(pubDate) : new Date();
+}
+
 // Implied-year handling. chrono fills in the year of its reference Date
 // when the source has no explicit year. We override that per-match by
 // looking at the closest year in the surrounding DOM — block first, then
@@ -81,9 +147,14 @@ function findContextTz(blockEl) {
 
 function isoForResult(result, ctxTz, blockEl) {
   const s = result.start;
+  // Only override the year for absolute date matches. For relative
+  // phrases the year already comes from chrono's resolution against
+  // the article publication date.
+  const t = result.text || "";
+  const isAbsolute = MONTH_NAME.test(t) || ISO_DATE.test(t);
   let year = s.get("year");
   let yearOverridden = false;
-  if (!s.isCertain("year")) {
+  if (isAbsolute && !s.isCertain("year")) {
     const ny = findContextYear(blockEl);
     if (ny != null && ny !== year) {
       year = ny;
@@ -144,13 +215,16 @@ const MONTH_NAME =
 const ISO_DATE = /\d{4}-\d{2}-\d{2}/;
 const ANY_DIGIT = /\d/;
 
+const HAS_LETTER = /[A-Za-z]/;
+
+// Trust chrono. Reject only obvious junk: too short, or purely
+// numeric ranges like "129–130" (unless it's a real ISO date).
 function isWantedMatch(result) {
-  const s = result.start;
-  if (!s || typeof s.isCertain !== "function") return false;
-  if (!s.isCertain("month")) return false;
+  if (!result.start) return false;
   const t = result.text || "";
-  if (ISO_DATE.test(t)) return true;
-  return MONTH_NAME.test(t) && ANY_DIGIT.test(t);
+  if (t.length < 3) return false;
+  if (!HAS_LETTER.test(t) && !ISO_DATE.test(t)) return false;
+  return true;
 }
 
 // Find the underlinable extent within a chrono match. We trim leading
@@ -168,21 +242,27 @@ function findExtent(text) {
     const left = text.slice(0, s).match(/\d{1,2}(?:st|nd|rd|th)?[\s,\-\.]+$/i);
     if (left) s -= left[0].length;
   } else {
-    return null;
+    // Relative phrase — keep the whole match. Leading connectors like
+    // "in" are part of the meaning ("in 3 days" vs "3 days ago").
+    s = 0;
+    while (s < text.length && /\s/.test(text[s])) s++;
   }
   let e = text.length;
   while (e > s && /[\s.,;:!?]/.test(text[e - 1])) e--;
-  return { start: s, end: e, text: text.slice(s, e) };
+  return e > s ? { start: s, end: e, text: text.slice(s, e) } : null;
 }
 
 // Classify the wrap's display granularity from the anchor text.
 // "time"  → "May 23, 2026, 3:00 PM"
 // "day"   → "May 23, 2026"
 // "month" → "May 2024"
-function classifyGranularity(result, anchorText) {
+function classifyGranularity(result, extentText) {
   if (result.start.isCertain("hour")) return "time";
-  const stripped = anchorText.replace(MONTH_NAME, "").replace(/\d{4}/g, "");
-  return /\d/.test(stripped) ? "day" : "month";
+  if (MONTH_NAME.test(extentText) || ISO_DATE.test(extentText)) {
+    const stripped = extentText.replace(MONTH_NAME, "").replace(/\d{4}/g, "");
+    return /\d/.test(stripped) ? "day" : "month";
+  }
+  return "day";
 }
 
 function blockAncestor(node) {
@@ -235,7 +315,7 @@ function scanBlock(blockEl, nodes) {
 
   let results;
   try {
-    results = chrono.parse(combined, new Date(), { forwardDate: false });
+    results = chrono.parse(combined, makeRefDate(), { forwardDate: false });
   } catch {
     return;
   }
