@@ -19,6 +19,69 @@ const BLOCK_TAGS = new Set([
 
 const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+// If the page title or first <h1> contains a year, use it as chrono's
+// reference so implied-year matches ("28 January" on a 2001 article)
+// resolve to that year instead of today.
+function inferPageYear() {
+  const candidates = [
+    document.title || "",
+    document.querySelector("h1")?.textContent || "",
+  ];
+  for (const s of candidates) {
+    const m = s.match(/\b(1[89]\d{2}|20\d{2})\b/);
+    if (m) return parseInt(m[1], 10);
+  }
+  return null;
+}
+const pageYear = inferPageYear();
+function makeRefDate() {
+  return pageYear ? new Date(pageYear, 0, 15, 12, 0, 0) : new Date();
+}
+
+// Timezone tokens that, if present in the matched text itself, mean
+// chrono already knew the zone — don't override from context.
+const TZ_TOKENS =
+  /\b(?:UTC|GMT|Z|EST|EDT|CST|CDT|MST|MDT|PST|PDT|IST|JST|AEST|AEDT|BST|CET|CEST|EET|EEST|UTC[+-]\d|GMT[+-]\d|[+-]\d{2}:?\d{2})\b/;
+const UTC_LIKE = /\b(?:UTC|GMT|Z)\b/;
+
+// Look up the row (for infobox-style <th>label</th><td>value</td>) and
+// the table head/caption for a TZ marker. Returns "UTC" if a UTC-like
+// label is found, otherwise null.
+function findContextTz(blockEl) {
+  if (!blockEl || !blockEl.closest) return null;
+  const tr = blockEl.closest("tr");
+  if (tr) {
+    for (const th of tr.querySelectorAll("th")) {
+      if (UTC_LIKE.test(th.textContent || "")) return "UTC";
+    }
+  }
+  const table = blockEl.closest("table");
+  if (table) {
+    const heads = table.querySelectorAll("thead, caption");
+    for (const h of heads) {
+      if (UTC_LIKE.test(h.textContent || "")) return "UTC";
+    }
+  }
+  return null;
+}
+
+function isoForResult(result, ctxTz) {
+  if (ctxTz === "UTC" && !TZ_TOKENS.test(result.text || "")) {
+    const s = result.start;
+    return new Date(
+      Date.UTC(
+        s.get("year"),
+        (s.get("month") || 1) - 1,
+        s.get("day") || 1,
+        s.get("hour") || 0,
+        s.get("minute") || 0,
+        s.get("second") || 0
+      )
+    ).toISOString();
+  }
+  return result.start.date().toISOString();
+}
+
 let active = false;
 let settings = { globalEnabled: true, disabledHosts: [], extraTimezones: [] };
 const wrapped = new Set(); // HTMLSpanElement[]
@@ -122,13 +185,13 @@ function scanRoot(root) {
     }
     arr.push(n);
   }
-  for (const [, nodes] of byBlock) {
+  for (const [block, nodes] of byBlock) {
     if (wrapped.size >= MAX_SPANS) break;
-    scanBlock(nodes);
+    scanBlock(block, nodes);
   }
 }
 
-function scanBlock(nodes) {
+function scanBlock(blockEl, nodes) {
   let combined = "";
   const map = []; // [{ node, start, end }]
   for (const n of nodes) {
@@ -142,11 +205,13 @@ function scanBlock(nodes) {
 
   let results;
   try {
-    results = chrono.parse(combined, new Date(), { forwardDate: false });
+    results = chrono.parse(combined, makeRefDate(), { forwardDate: false });
   } catch {
     return;
   }
   if (!results.length) return;
+
+  const ctxTz = findContextTz(blockEl);
 
   // Group wrap operations by text node. A single chrono match may span
   // multiple text nodes (e.g. "26 January 2001 at <span>08:46 IST</span>"
@@ -161,7 +226,7 @@ function scanBlock(nodes) {
     const absS = r.index + ext.start;
     const absE = r.index + ext.end;
     if (absE <= absS) continue;
-    const iso = r.start.date().toISOString();
+    const iso = isoForResult(r, ctxTz);
     const gran = classifyGranularity(r, ext.text);
     for (const entry of map) {
       if (entry.end <= absS) continue;
@@ -265,14 +330,14 @@ function renderTooltipContent(date, gran) {
   if (gran === "month") {
     // Month+year only — not an instant, no TZ conversion meaningful.
     lines.push(`<div class="dn-row dn-primary">${escapeHtml(MONTH_FMT.format(date))}</div>`);
-    lines.push(`<div class="dn-row dn-rel">${escapeHtml(relative(date))}</div>`);
+    lines.push(`<div class="dn-row dn-rel">${escapeHtml(relative(date, "month"))}</div>`);
     return lines.join("");
   }
   const withTime = gran === "time";
   lines.push(
     `<div class="dn-row dn-primary">${escapeHtml(formatInTz(date, userTz, withTime))}</div>`
   );
-  lines.push(`<div class="dn-row dn-rel">${escapeHtml(relative(date))}</div>`);
+  lines.push(`<div class="dn-row dn-rel">${escapeHtml(relative(date, gran))}</div>`);
   for (const tz of settings.extraTimezones) {
     lines.push(
       `<div class="dn-row dn-extra"><span class="dn-tz">${escapeHtml(
