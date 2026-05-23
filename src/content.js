@@ -259,25 +259,40 @@ const NUM_WORD =
 const BIG_UNIT = /(?:month|year|decade|centur(?:y|ies))s?/;
 const ANY_UNIT =
   /(?:second|minute|hour|day|week|month|year|decade|centur(?:y|ies))s?/;
-// "in/for/over/… N <large_unit>" — chrono speculatively projects this
-// to a future date but it's almost always a duration in prose. Only
-// large units (≥ month) so we keep "in 3 days" / "in 5 hours".
-const DURATION_PREFIXED = new RegExp(
-  `^(?:in|for|over|within|after|past)\\s+(?:about\\s+|nearly\\s+|almost\\s+|roughly\\s+)?${NUM_WORD.source}\\s+${BIG_UNIT.source}\\s*$`,
+// Glued shorthand: "8h", "5m+", "30d", "2.5y" — common in tweets/logs.
+const GLUED_NUM_UNIT = /\d+(?:[.,]\d+)?\s*[smhdwy]\+?/i;
+const APPROX = "(?:about\\s+|nearly\\s+|almost\\s+|roughly\\s+)?";
+
+// "for|over|within|past|after N <unit>" — always a duration regardless
+// of unit size or whether the unit is spelled out or glued. So
+// "for 8 hours" / "for 8h" / "for 8h+" / "for 13 years" / "after 5h"
+// all get dropped.
+const DURATION_ALWAYS = new RegExp(
+  `^(?:for|over|within|past|after)\\s+${APPROX}(?:${NUM_WORD.source}\\s+${ANY_UNIT.source}|${GLUED_NUM_UNIT.source})\\s*$`,
+  "i"
+);
+// "in N <large_unit>" — usually duration. Small units ("in 3 days",
+// "in 5 hours") stay because they're often legitimate future
+// references.
+const DURATION_IN_LARGE = new RegExp(
+  `^in\\s+${APPROX}${NUM_WORD.source}\\s+${BIG_UNIT.source}\\s*$`,
   "i"
 );
 // "N <unit> later/earlier/after/before/hence" — anchored to some
-// implicit event, not to "now". Any unit qualifies.
+// implicit event, not to "now". Any unit.
 const DURATION_TRAILING = new RegExp(
-  `^(?:about\\s+|nearly\\s+|almost\\s+|roughly\\s+)?${NUM_WORD.source}\\s+${ANY_UNIT.source}\\s+(?:later|earlier|after|before|hence)\\s*$`,
+  `^${APPROX}${NUM_WORD.source}\\s+${ANY_UNIT.source}\\s+(?:later|earlier|after|before|hence)\\s*$`,
   "i"
 );
 // Standalone words that are usually conversational filler ("Bun looks
-// nothing like it does today") rather than date pointers. Skip them
-// even though chrono resolves them.
+// nothing like it does today") rather than date pointers.
 const FILLER_WORDS = /^(?:(?:right\s+)?now|today|tonight)$/i;
 function isDurationPhrase(text) {
-  return DURATION_PREFIXED.test(text) || DURATION_TRAILING.test(text);
+  return (
+    DURATION_ALWAYS.test(text) ||
+    DURATION_IN_LARGE.test(text) ||
+    DURATION_TRAILING.test(text)
+  );
 }
 
 // Anything that could plausibly contain a date or relative phrase.
