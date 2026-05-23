@@ -1,0 +1,52 @@
+.dn-date {
+  text-decoration: underline dotted currentColor;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+.dn-tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+  background: #111;
+  color: #fff;
+  padding: 6px 9px;
+  border-radius: 6px;
+  font: 12px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  max-width: 300px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  transition: opacity 80ms ease-out;
+}
+
+.dn-tooltip[data-show] {
+  opacity: 1;
+}
+
+.dn-tooltip .dn-row {
+  white-space: nowrap;
+}
+
+.dn-tooltip .dn-primary {
+  font-weight: 600;
+}
+
+.dn-tooltip .dn-rel {
+  opacity: 0.75;
+  margin-top: 1px;
+}
+
+.dn-tooltip .dn-extra {
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+.dn-tooltip .dn-tz {
+  display: inline-block;
+  min-width: 72px;
+  opacity: 0.65;
+  margin-right: 4px;
+}
