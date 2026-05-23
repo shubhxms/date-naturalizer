@@ -6,7 +6,12 @@
 }
 
 /* =============================================================
-   Hover tooltip — small utility card.
+   Hover tooltip
+   Hierarchy:
+     1. primary  — the answer to "when is this in my zone?"
+     2. relative — its byline ("today", "5 days ago")
+     3. extras   — a small comparison table for other zones
+   One typeface, tabular numerals for alignment.
    ============================================================= */
 .dn-tooltip {
   position: fixed;
@@ -16,21 +21,21 @@
   pointer-events: none;
 
   min-width: 0;
-  max-width: 280px;
-  padding: 8px 10px 9px;
-  border-radius: 5px;
-  background: #18181b;
+  max-width: 300px;
+  padding: 10px 13px 11px;
+  border-radius: 6px;
+  background: #1a1a1d;
   color: #f4f4f5;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   box-shadow:
-    0 6px 16px rgba(0, 0, 0, 0.28),
+    0 8px 22px rgba(0, 0, 0, 0.32),
     0 1px 3px rgba(0, 0, 0, 0.18);
 
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", "Helvetica Neue", sans-serif;
   font-size: 12px;
   line-height: 1.4;
-  letter-spacing: 0;
+  letter-spacing: -0.002em;
   font-variant-numeric: tabular-nums;
 
   opacity: 0;
@@ -46,39 +51,46 @@
   white-space: nowrap;
 }
 
+/* 1 — primary */
 .dn-tooltip .dn-primary {
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
   color: #fafafa;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.012em;
 }
 
+/* 2 — relative, attached under the primary */
 .dn-tooltip .dn-rel {
   font-size: 11px;
   font-weight: 400;
-  color: rgba(244, 244, 245, 0.55);
-  margin-top: 1px;
+  line-height: 1.3;
+  color: rgba(244, 244, 245, 0.5);
+  margin-top: 3px;
 }
 
+/* 3 — extras: small comparison table */
 .dn-tooltip .dn-extra {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 16px;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 10.5px;
-  color: rgba(244, 244, 245, 0.82);
-  padding-top: 3px;
+  gap: 20px;
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: rgba(244, 244, 245, 0.92);
 }
 
 .dn-tooltip .dn-extra:first-of-type {
   border-top: 1px solid rgba(244, 244, 245, 0.08);
-  padding-top: 6px;
-  margin-top: 6px;
+  padding-top: 8px;
+  margin-top: 9px;
 }
 
 .dn-tooltip .dn-tz {
-  color: rgba(244, 244, 245, 0.5);
+  font-size: 10.5px;
+  font-weight: 400;
+  color: rgba(244, 244, 245, 0.48);
+  letter-spacing: 0;
   white-space: nowrap;
 }
 
