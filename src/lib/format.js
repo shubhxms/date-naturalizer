@@ -1,9 +1,10 @@
-export const formatInTz = (date, tz) =>
-  new Intl.DateTimeFormat(undefined, {
-    timeZone: tz,
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+export const formatInTz = (date, tz, withTime = true) =>
+  new Intl.DateTimeFormat(
+    undefined,
+    withTime
+      ? { timeZone: tz, dateStyle: "medium", timeStyle: "short" }
+      : { timeZone: tz, dateStyle: "medium" }
+  ).format(date);
 
 const UNITS = [
   ["year", 31536000],

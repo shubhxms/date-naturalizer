@@ -36,10 +36,22 @@ function shouldSkip(node) {
   return false;
 }
 
-function hasDateComponents(result) {
+// Require the source text itself to anchor the match — either an ISO date
+// or a month name plus some digit (day or year). chrono's isCertain/get
+// fields fill in implied values from the reference date, so they can't
+// distinguish "May 2024" from a bare "May".
+const MONTH_NAME =
+  /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b/i;
+const ISO_DATE = /\d{4}-\d{2}-\d{2}/;
+const ANY_DIGIT = /\d/;
+
+function isWantedMatch(result) {
   const s = result.start;
-  if (!s || typeof s.get !== "function") return false;
-  return s.get("day") != null && s.get("month") != null && s.get("year") != null;
+  if (!s || typeof s.isCertain !== "function") return false;
+  if (!s.isCertain("month")) return false;
+  const t = result.text || "";
+  if (ISO_DATE.test(t)) return true;
+  return MONTH_NAME.test(t) && ANY_DIGIT.test(t);
 }
 
 function wrapTextNode(textNode) {
@@ -59,7 +71,7 @@ function wrapTextNode(textNode) {
   if (!results.length) return;
 
   const matches = results
-    .filter((r) => hasDateComponents(r) && r.index >= 0 && r.text)
+    .filter((r) => isWantedMatch(r) && r.index >= 0 && r.text)
     .sort((a, b) => a.index - b.index);
   if (!matches.length) return;
 
@@ -78,6 +90,7 @@ function wrapTextNode(textNode) {
     span.textContent = m.text;
     const d = m.start.date();
     span.dataset.iso = d.toISOString();
+    if (m.start.isCertain("hour")) span.dataset.hasTime = "1";
     frag.appendChild(span);
     wrapped.add(span);
     cursor = m.index + m.text.length;
@@ -143,15 +156,17 @@ function ensureTooltip() {
   return tooltipEl;
 }
 
-function renderTooltipContent(date) {
+function renderTooltipContent(date, withTime) {
   const lines = [];
-  lines.push(`<div class="dn-row dn-primary">${escapeHtml(formatInTz(date, userTz))}</div>`);
+  lines.push(
+    `<div class="dn-row dn-primary">${escapeHtml(formatInTz(date, userTz, withTime))}</div>`
+  );
   lines.push(`<div class="dn-row dn-rel">${escapeHtml(relative(date))}</div>`);
   for (const tz of settings.extraTimezones) {
     lines.push(
       `<div class="dn-row dn-extra"><span class="dn-tz">${escapeHtml(
         shortTzLabel(tz)
-      )}</span> ${escapeHtml(formatInTz(date, tz))}</div>`
+      )}</span> ${escapeHtml(formatInTz(date, tz, withTime))}</div>`
     );
   }
   return lines.join("");
@@ -187,7 +202,7 @@ function showTooltip(target) {
   const date = new Date(iso);
   if (isNaN(date.getTime())) return;
   ensureTooltip();
-  tooltipEl.innerHTML = renderTooltipContent(date);
+  tooltipEl.innerHTML = renderTooltipContent(date, target.dataset.hasTime === "1");
   positionTooltip(target);
 }
 
