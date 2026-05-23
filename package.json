@@ -1,0 +1,16 @@
+{
+  "name": "date-naturalizer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch"
+  },
+  "dependencies": {
+    "chrono-node": "^2.7.7"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}
