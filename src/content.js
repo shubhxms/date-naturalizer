@@ -708,24 +708,27 @@ function fmtExtra(date, tz, withTime) {
   return `${dow}, ${md}`;
 }
 
+function capFirst(s) {
+  return s ? s[0].toUpperCase() + s.slice(1) : s;
+}
+
 function renderTooltipContent(date, gran) {
   const lines = [];
-  let primaryText, relText;
+  let dateText, relText;
 
   if (gran === "month") {
-    primaryText = MONTH_FMT.format(date);
+    dateText = MONTH_FMT.format(date);
     relText = relative(date, "month");
   } else {
-    primaryText = fmtHeadline(date, gran === "time");
+    dateText = fmtHeadline(date, gran === "time");
     relText = relative(date, gran);
   }
 
-  lines.push(
-    `<div class="dn-headline">` +
-    `<span class="dn-date">${escapeHtml(primaryText)}</span>` +
-    `<span class="dn-rel">${escapeHtml(relText)}</span>` +
-    `</div>`
-  );
+  // Relative is the cognitive value-add ("today", "5 hours ago") — it
+  // gets the lead. Capitalized so it reads like a heading. The precise
+  // datetime sits underneath as supporting precision.
+  lines.push(`<div class="dn-lead">${escapeHtml(capFirst(relText))}</div>`);
+  lines.push(`<div class="dn-sub">${escapeHtml(dateText)}</div>`);
 
   if (gran !== "month" && settings.extraTimezones.length) {
     let extras = `<div class="dn-extras">`;

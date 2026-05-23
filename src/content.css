@@ -7,6 +7,7 @@
 
 /* =============================================================
    Hover tooltip
+   Hierarchy: lead (relative interp) > sub (precise date) > extras
    ============================================================= */
 .dn-tooltip {
   position: fixed;
@@ -17,7 +18,7 @@
 
   min-width: 0;
   max-width: 300px;
-  padding: 9px 12px 10px;
+  padding: 10px 12px 11px;
   border-radius: 6px;
   background: #1c1c1f;
   color: #f4f4f5;
@@ -28,7 +29,6 @@
 
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", "Helvetica Neue", sans-serif;
-  font-size: 12px;
   line-height: 1.4;
   letter-spacing: -0.003em;
   font-variant-numeric: tabular-nums;
@@ -42,29 +42,25 @@
   transform: translateY(0);
 }
 
-/* one inline line: date dominant + relative as a quiet annotation */
-.dn-tooltip .dn-headline {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex-wrap: wrap;
-  row-gap: 1px;
-}
-
-.dn-tooltip .dn-date {
-  font-size: 12.5px;
-  font-weight: 500;
+/* lead = the human-friendly answer ("Today", "5 hours ago", "Yesterday") */
+.dn-tooltip .dn-lead {
+  font-size: 13px;
+  font-weight: 600;
   color: #fafafa;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.012em;
+  white-space: nowrap;
 }
 
-.dn-tooltip .dn-rel {
-  font-size: 11px;
+/* sub = precise datetime (supporting detail) */
+.dn-tooltip .dn-sub {
+  margin-top: 2px;
+  font-size: 11.5px;
   font-weight: 400;
-  color: rgba(244, 244, 245, 0.5);
+  color: rgba(244, 244, 245, 0.62);
+  white-space: nowrap;
 }
 
-/* zone comparison table — clean two-column grid */
+/* extras = per-zone comparison, smaller still */
 .dn-tooltip .dn-extras {
   margin-top: 8px;
   padding-top: 7px;
@@ -85,7 +81,7 @@
 
 .dn-tooltip .dn-val {
   text-align: right;
-  color: rgba(244, 244, 245, 0.92);
+  color: rgba(244, 244, 245, 0.88);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
