@@ -15,7 +15,6 @@ const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 let active = false;
 let settings = { globalEnabled: true, disabledHosts: [], extraTimezones: [] };
 const wrapped = new Set(); // HTMLSpanElement[]
-const seenTextNodes = new WeakSet();
 
 let tooltipEl = null;
 let scanQueue = new Set();
@@ -38,13 +37,13 @@ function shouldSkip(node) {
 }
 
 function hasDateComponents(result) {
-  const known = result.start && result.start.knownValues ? result.start.knownValues : {};
-  return ("day" in known) && ("month" in known);
+  const s = result.start;
+  if (!s || typeof s.get !== "function") return false;
+  return s.get("day") != null && s.get("month") != null && s.get("year") != null;
 }
 
 function wrapTextNode(textNode) {
   if (wrapped.size >= MAX_SPANS) return;
-  if (seenTextNodes.has(textNode)) return;
   const text = textNode.nodeValue;
   if (!text) return;
   const len = text.length;
@@ -57,19 +56,12 @@ function wrapTextNode(textNode) {
   } catch {
     return;
   }
-  if (!results.length) {
-    seenTextNodes.add(textNode);
-    return;
-  }
+  if (!results.length) return;
 
-  // Filter to results that have at least day+month, sort by index.
   const matches = results
     .filter((r) => hasDateComponents(r) && r.index >= 0 && r.text)
     .sort((a, b) => a.index - b.index);
-  if (!matches.length) {
-    seenTextNodes.add(textNode);
-    return;
-  }
+  if (!matches.length) return;
 
   const parent = textNode.parentNode;
   if (!parent) return;
