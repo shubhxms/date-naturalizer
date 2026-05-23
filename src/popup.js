@@ -1,9 +1,15 @@
-const DEFAULTS = { globalEnabled: true, disabledHosts: [], extraTimezones: [] };
+const DEFAULTS = {
+  globalEnabled: true,
+  disabledHosts: [],
+  extraTimezones: [],
+  convertRelatives: false,
+};
 
 const $ = (id) => document.getElementById(id);
 const hostEl = $("host");
 const siteToggle = $("site-toggle");
 const globalToggle = $("global-toggle");
+const relativesToggle = $("relatives-toggle");
 const chipsEl = $("chips");
 const tzInput = $("tz-input");
 const tzList = $("tz-list");
@@ -54,6 +60,7 @@ function save(patch) {
 function render() {
   hostEl.textContent = currentHost || "(no page)";
   globalToggle.checked = !!state.globalEnabled;
+  relativesToggle.checked = !!state.convertRelatives;
 
   const siteDisabled = state.disabledHosts.includes(currentHost);
   siteToggle.checked = !!currentHost && !siteDisabled;
@@ -86,6 +93,10 @@ siteToggle.addEventListener("change", () => {
 
 globalToggle.addEventListener("change", () => {
   save({ globalEnabled: globalToggle.checked });
+});
+
+relativesToggle.addEventListener("change", () => {
+  save({ convertRelatives: relativesToggle.checked });
 });
 
 function tryAddTz(value) {

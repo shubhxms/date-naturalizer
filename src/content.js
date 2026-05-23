@@ -214,7 +214,12 @@ function isoForResult(result, ctxTz, blockEl, combined, nearAbsDate) {
 }
 
 let active = false;
-let settings = { globalEnabled: true, disabledHosts: [], extraTimezones: [] };
+let settings = {
+  globalEnabled: true,
+  disabledHosts: [],
+  extraTimezones: [],
+  convertRelatives: false,
+};
 const wrapped = new Set(); // HTMLSpanElement[]
 
 let tooltipEl = null;
@@ -310,6 +315,9 @@ function isWantedMatch(result) {
   if (!HAS_LETTER.test(t) && !ISO_DATE.test(t)) return false;
   if (FILLER_WORDS.test(t)) return false;
   if (isDurationPhrase(t)) return false;
+  if (!settings.convertRelatives) {
+    if (!MONTH_NAME.test(t) && !ISO_DATE.test(t)) return false;
+  }
   return true;
 }
 
@@ -784,14 +792,31 @@ function deactivate() {
 }
 
 function applySettings(next) {
+  const prev = settings;
   settings = { ...settings, ...next };
-  if (isEnabled(settings)) activate();
-  else deactivate();
+  const enabled = isEnabled(settings);
+  if (!enabled) {
+    deactivate();
+    return;
+  }
+  // Toggling convertRelatives flips which matches survive isWantedMatch,
+  // so re-wrap from scratch when it changes.
+  if (active && prev.convertRelatives !== settings.convertRelatives) {
+    unwrapAll();
+    scheduleScan(document.body);
+    return;
+  }
+  activate();
 }
 
 // ---- Bootstrap ----
 chrome.storage.sync.get(
-  { globalEnabled: true, disabledHosts: [], extraTimezones: [] },
+  {
+    globalEnabled: true,
+    disabledHosts: [],
+    extraTimezones: [],
+    convertRelatives: false,
+  },
   (s) => applySettings(s)
 );
 
